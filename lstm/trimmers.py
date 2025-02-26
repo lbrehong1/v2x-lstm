@@ -1,7 +1,10 @@
 import re
 import sys
+import argparse
 
 NAN = "NaN"
+MIN_LAT, MAX_LAT = 43.554669, 43.568290
+MIN_LON, MAX_LON = 1.463952, 1.472176
 
 def trim_pc5(input_file, output_file):
     out = 0
@@ -63,13 +66,13 @@ def trim_dsrc(input_file, output_file, pc5_data=None):
 
             else:
                 ts = int(float(timestamp))//1000 # we transmitted every 100ms, we round up for every second
-                if ts not in pc5_data: # TODO floor to nearest timestamp in ms
+                if ts not in pc5_data: # floor to nearest timestamp in ms
                     if ts+1 in pc5_data:
                         latitude, longitude = pc5_data.get(ts+1, ("", ""))
                     elif ts-1 in pc5_data:
                         latitude, longitude = pc5_data.get(ts-1, ("", ""))
                     else:
-                        latitude, longitude = NAN, NAN
+                        latitude, longitude = MIN_LAT, MIN_LON
                 else:
                     latitude, longitude = pc5_data.get(ts, ("", ""))
                 outfile.write(f"{tx_seq_num},{timestamp},{latitude},{longitude},{power_ant1},{power_ant2},{latency}\n")
@@ -82,36 +85,35 @@ def trim_dsrc(input_file, output_file, pc5_data=None):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 4:
-        type = sys.argv[1]
-        input_file = sys.argv[2]
-        output_file = sys.argv[3]
+    parser = argparse.ArgumentParser(
+        description="Trim log files for PC5 and DSRC",
+        epilog="Examples:\n"
+               "  python trimmers.py --rat pc5 --input_file input_pc5.log --output_file output_pc5.log\n"
+               "  python trimmers.py --rat dsrc --input_file input_dsrc.log --output_file output_dsrc.log\n"
+               "  python trimmers.py --rat both --input_file input_dsrc.log --output_file output_dsrc.log --input_file_both input_pc5.log --output_file_both output_pc5.log",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument('--rat', type=str, required=True, choices=['dsrc', 'pc5', 'both'], help="Type of log file to trim (dsrc, pc5, or both)")
+    parser.add_argument('--input_file', type=str, required=True, help="Path to the input log file")
+    parser.add_argument('--output_file', type=str, required=True, help="Path to the output trimmed log file")
+    parser.add_argument('--input_file_both', type=str, help="Path to the input PC5 log file (required if type is 'both')")
+    parser.add_argument('--output_file_both', type=str, help="Path to the output trimmed PC5 log file (required if type is 'both')")
+    args = parser.parse_args()
 
-        if type == "dsrc":
-            out = trim_dsrc(input_file, output_file)
-            print("Generated " + str(out) + " lines")
-        elif type == "pc5":
-            out = trim_pc5(input_file, output_file)
-            print("Generated " + str(out) + " lines")
-        else:
-            print("Invalid log type, must be 'dsrc' or 'pc5'. Or you can use both files at once (recommended).")
-            print("Usage 1 : python3 trimmers.py <rat_type> <input_file> <output_file>")
-            print("Usage 2 : python3 trimmers.py <input_file_dsrc> <input_file_pc5> <output_file_dsrc> <output_file_pc5>")
+    if args.rat == "dsrc":
+        out = trim_dsrc(args.input_file, args.output_file)
+        print("Generated " + str(out) + " lines")
+    elif args.rat == "pc5":
+        out,data = trim_pc5(args.input_file, args.output_file)
+        print("Generated " + str(out) + " lines")
+    elif args.rat == "both":
+        if not args.input_file_both or not args.output_file_both:
+            print("Both input_file_both and output_file_both are required when rat is 'both'")
             sys.exit(1)
-
-    elif len(sys.argv) == 5:
-        input_file_dsrc = sys.argv[1]
-        input_file_pc5 = sys.argv[2]
-        output_file_dsrc = sys.argv[3]
-        output_file_pc5 = sys.argv[4]
-
-        (out_pc5,pc5_data) = trim_pc5(input_file_pc5, output_file_pc5)
-        out_dsrc = trim_dsrc(input_file_dsrc, output_file_dsrc, pc5_data)
-
+        out_pc5, pc5_data = trim_pc5(args.input_file_both, args.output_file_both)
+        out_dsrc = trim_dsrc(args.input_file, args.output_file, pc5_data)
         print("Generated " + str(out_pc5) + " lines for PC5")
         print("Generated " + str(out_dsrc) + " lines for DSRC")
-
     else:
-        print("Usage 1 : python3 trimmers.py <rat_type> <input_file> <output_file>")
-        print("Usage 2 : python3 trimmers.py <input_file_dsrc> <input_file_pc5> <output_file_dsrc> <output_file_pc5>")
+        print("Invalid rat type, must be 'dsrc', 'pc5', or 'both'.")
         sys.exit(1)

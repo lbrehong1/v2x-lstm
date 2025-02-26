@@ -131,30 +131,35 @@ if __name__ == "__main__":
     df["tx_latitude"] = df["tx_latitude"].interpolate().bfill()
     df["tx_longitude"] = df["tx_longitude"].interpolate().bfill()
 
-    (X_train,y_train,X_new_data,y_new_data,scalers) = preprocess_lstm_input(df, rat=RAT, target_cols=TARGET_COLS, time_column="tx_timestamp_ms", window_size_sec=PDR_WINDOW, packet_interval_ms=TX_INTERVAL_MS, seq_length=TIMESTEPS, train_ratio=TRAIN_RATIO)
-    print("Preprocessing complete.")
 
     # Load existing model or train new one
     if LOAD and os.path.exists(MODEL_PATH):
-        print("Loading existing model: " + MODEL_PATH)
+        print("___ Loading existing model: " + MODEL_PATH)
         model = load_model(MODEL_PATH, custom_objects={'rmse': rmse})
         if model:
-            print("Model loaded successfully: " + MODEL_PATH)
+            print("___ Model loaded successfully: " + MODEL_PATH)
         else:
             raise ValueError("Failed to load model.")
+        print("___ Starting data preprocessing.")
+        (X_train,y_train,X_new_data,y_new_data,scalers) = preprocess_lstm_input(df, new=False, rat=RAT, target_cols=TARGET_COLS, time_column="tx_timestamp_ms", window_size_sec=PDR_WINDOW, packet_interval_ms=TX_INTERVAL_MS, seq_length=TIMESTEPS, train_ratio=TRAIN_RATIO)
+        print("___ Preprocessing complete.")
     else:
         if not LOAD:
-            print("No model selected. Building...")
+            print("___ No model selected. Building...")
         elif not os.path.exists(MODEL_PATH):
-            print("No model found. Building...")
+            print("___ No model found. Building...")
+        print("___ Starting data preprocessing.")
+        (X_train,y_train,X_new_data,y_new_data,scalers) = preprocess_lstm_input(df, new=True, rat=RAT, target_cols=TARGET_COLS, time_column="tx_timestamp_ms", window_size_sec=PDR_WINDOW, packet_interval_ms=TX_INTERVAL_MS, seq_length=TIMESTEPS, train_ratio=TRAIN_RATIO)
+        print("___ Preprocessing complete.")
         model = build_lstm_model(TIMESTEPS, FEATURES)
         # model.summary() # Print model summary
-        early_stopping = EarlyStopping(monitor='loss', patience=5, restore_best_weights=True) # Stop training if loss does not improve
-        print("Initial training...")
+        early_stopping = EarlyStopping(monitor='loss', patience=5,
+                                       restore_best_weights=True)  # Stop training if loss does not improve
+        print("___ Initial training...")
         model.fit(X_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, callbacks=[early_stopping], validation_split=VALIDATION_SPLIT, verbose=1)
         lstm_path = os.path.join(MODEL_DIR, "model_" + RAT + "_" + str(int(time.time())) + ".keras")
         model.save(lstm_path)
-        print(f"Model saved to {lstm_path}")
+        print(f"___ Model saved to {lstm_path}")
 
     # Predict and retrain
     position = 0

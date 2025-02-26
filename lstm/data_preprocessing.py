@@ -86,11 +86,12 @@ def generate_lstm_sequences(data, feature_cols, target_cols, seq_length, batch_s
 
 
 #%%
-def preprocess_lstm_input(df, rat, target_cols, time_column, window_size_sec, packet_interval_ms, seq_length, train_ratio):
+def preprocess_lstm_input(df, new, rat, target_cols, time_column, window_size_sec, packet_interval_ms, seq_length, train_ratio):
     """
     Prepares LSTM input by computing PDR, normalizing features, and creating time series sequences.
 
     :param rat: RAT type ('pc5' or 'dsrc').
+    :param new: Is this data for a new model?
     :param df: DataFrame with raw network data.
     :param rat: RAT for this LSTM, used to determine feature column names.
     :param target_cols: List of target column names (e.g., ['throughput', 'PDR']).
@@ -107,11 +108,11 @@ def preprocess_lstm_input(df, rat, target_cols, time_column, window_size_sec, pa
     elif rat == "dsrc":
         feature_cols = FEATURE_COLS_DSRC
     else:
-        raise ValueError("Invalid RAT type. Must be 'pc5' or 'dsrc'.")
+        raise ValueError("!!! Invalid RAT type. Must be 'pc5' or 'dsrc'.")
 
 
     # Compute PDR and add it to dataframe
-    print("Time to compute PDR...")
+    print("___ Time to compute PDR...")
     compute_pdr_rolling(df, time_column, window_size_sec, packet_interval_ms)
 
     # Select relevant features and targets (e.g., get rid of seqnum and timestamp column)
@@ -135,11 +136,14 @@ def preprocess_lstm_input(df, rat, target_cols, time_column, window_size_sec, pa
         'rsrp_2': rsrp_scaler
     }
 
-    print("Time to normalize data...")
+    print("___ Time to normalize data...")
     for col in feature_cols: #+ target_cols:
         if col == 'tx_latitude' or col == 'tx_longitude':
             if not gps_flag:
-                df[['tx_latitude', 'tx_longitude']] = gps_scaler.transform(df[['tx_latitude', 'tx_longitude']])
+                try:
+                    df[['tx_latitude', 'tx_longitude']] = gps_scaler.transform(df[['tx_latitude', 'tx_longitude']])
+                except ValueError as e:
+                    print("!!! NaN GPS caught, skipping normalization")
                 gps_flag = True
             else:
                 continue
@@ -147,7 +151,7 @@ def preprocess_lstm_input(df, rat, target_cols, time_column, window_size_sec, pa
             df[col] = scalers[col].transform(df[[col]])  # Apply fitted scaler
 
     # Split into training/validation & new data sets
-    print("Splitting data between training and future input...")
+    print("___ Splitting data between training and future input...")
     split_idx = int(len(df) * train_ratio)
     train_val_data = df.iloc[:split_idx].copy()
     #end_idx = split_idx * 2 # THIS WAS FOR TESTING PURPOSES, keeping the full dataset explodes RAM usage
@@ -155,20 +159,24 @@ def preprocess_lstm_input(df, rat, target_cols, time_column, window_size_sec, pa
     #new_data = df.iloc[split_idx:end_idx].copy() # THIS WAS FOR TESTING PURPOSES, keeping the full dataset explodes RAM usage
 
     # Convert to sequences for LSTM
-    print("Time to convert into 3D data...")
-    print(f"___ Training data... length {len(train_val_data) - seq_length}")
+    print("___ Time to convert into 3D data...")
     x_sequences_train, y_sequences_train = [], []
     x_sequences_new, y_sequences_new = [], []
-    for x_batch, y_batch in generate_lstm_sequences(train_val_data, feature_cols, target_cols, seq_length):
-        x_sequences_train.append(x_batch)
-        y_sequences_train.append(y_batch)
-    x_sequences_train = np.concatenate(x_sequences_train, axis=0)
-    y_sequences_train = np.concatenate(y_sequences_train, axis=0)
+    if new: # This is a new model, we need to concat 3D training data
+        print(f"___ Training data... length {len(train_val_data) - seq_length}")
+        for x_batch, y_batch in generate_lstm_sequences(train_val_data, feature_cols, target_cols, seq_length):
+            x_sequences_train.append(x_batch)
+            y_sequences_train.append(y_batch)
+        x_sequences_train = np.concatenate(x_sequences_train, axis=0)
+        y_sequences_train = np.concatenate(y_sequences_train, axis=0)
+
+    # Now we concat 3D new data
+    print(f"___ New data... length {len(new_data) - seq_length}")
     for x_batch, y_batch in generate_lstm_sequences(new_data, feature_cols, target_cols, seq_length):
         x_sequences_new.append(x_batch)
         y_sequences_new.append(y_batch)
     x_sequences_new = np.concatenate(x_sequences_new, axis=0)
     y_sequences_new = np.concatenate(y_sequences_new, axis=0)
 
-    print("Time to convert into numpy arrays...")
+    print("___ Time to convert into numpy arrays...")
     return np.array(x_sequences_train), np.array(y_sequences_train), np.array(x_sequences_new), np.array(y_sequences_new), scalers
