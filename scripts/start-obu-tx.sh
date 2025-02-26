@@ -11,8 +11,8 @@ cleanup() {
 trap cleanup SIGINT
 
 # Launch commands in the background
-llc -i1 test-tx -c 174 -l 1000 -n 100000 -r 50 -g time &
-acme -g -I 100 -P10 -U 1 &
+llc -i1 test-tx -c 174 -l 1000 -n 180000 -r 50 -g time &
+acme -g -I 20 -P10 -U 1 &
 
 # Wait to keep the script running until interrupted
 wait
