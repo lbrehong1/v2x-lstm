@@ -9,11 +9,13 @@ MIN_LON, MAX_LON = 1.463952, 1.472176
 MIN_LATENCY, MAX_LATENCY = 4,1000 # in ms
 MIN_THROUGHPUT, MAX_THROUGHPUT = 0, 100 # in Mbps
 MIN_PDR, MAX_PDR = 0, 1
-#MIN_SINR, MAX_SINR =
-MIN_RSRP, MAX_RSRP = -150, -45
+#MIN_SINR_5G, MAX_SINR_5G =
+#MIN_RSRP_5G, MAX_RSRP_5G =
+MIN_RSRP_DSRC, MAX_RSRP_DSRC = -150, -45
 
 #FEATURE_COLS_PC5 = ['tx_seq_num','tx_timestamp_ms','tx_latitude','tx_longitude','latency_ms','pdr']
 #FEATURE_COLS_DSRC = ['tx_seq_num','tx_timestamp_ms','tx_latitude','tx_longitude','rsrp_1','rsrp_2','latency_ms','pdr']
+FEATURE_COLS_5G = ['tx_latitude','tx_longitude','sinr','rsrp','latency_ms','pdr']
 FEATURE_COLS_PC5 = ['tx_latitude','tx_longitude','latency_ms','pdr']
 FEATURE_COLS_DSRC = ['tx_latitude','tx_longitude','rsrp_1','rsrp_2','latency_ms','pdr']
 #TARGET_COLS = ['throughput', 'pdr']
@@ -90,7 +92,7 @@ def preprocess_lstm_input(df, new, rat, target_cols, time_column, window_size_se
     """
     Prepares LSTM input by computing PDR, normalizing features, and creating time series sequences.
 
-    :param rat: RAT type ('pc5' or 'dsrc').
+    :param rat: RAT type ('5g', 'pc5' or 'dsrc').
     :param new: Is this data for a new model?
     :param df: DataFrame with raw network data.
     :param rat: RAT for this LSTM, used to determine feature column names.
@@ -107,8 +109,10 @@ def preprocess_lstm_input(df, new, rat, target_cols, time_column, window_size_se
         feature_cols = FEATURE_COLS_PC5
     elif rat == "dsrc":
         feature_cols = FEATURE_COLS_DSRC
+    elif rat == "5g":
+        feature_cols = FEATURE_COLS_5G
     else:
-        raise ValueError("!!! Invalid RAT type. Must be 'pc5' or 'dsrc'.")
+        raise ValueError("!!! Invalid RAT type. Must be '5g', 'pc5' or 'dsrc'.")
 
 
     # Compute PDR and add it to dataframe
@@ -123,8 +127,9 @@ def preprocess_lstm_input(df, new, rat, target_cols, time_column, window_size_se
     latency_scaler = MinMaxScaler(feature_range=(0, 1)).fit([[MIN_LATENCY], [MAX_LATENCY]])
     throughput_scaler = MinMaxScaler(feature_range=(0, 1)).fit([[MIN_THROUGHPUT], [MAX_THROUGHPUT]])
     pdr_scaler = MinMaxScaler(feature_range=(0, 1)).fit([[MIN_PDR], [MAX_PDR]])
-    #sinr_scaler = MinMaxScaler(feature_range=(0, 1)) # will be scaled on the fly
-    rsrp_scaler = MinMaxScaler(feature_range=(0, 1)).fit([[MIN_RSRP], [MAX_RSRP]])
+    #sinr_5g_scaler = MinMaxScaler(feature_range=(0, 1)).fit([[MIN_SINR_5G], [MAX_SINR_5G]])
+    #rsrp_5g_scaler = MinMaxScaler(feature_range=(0, 1)).fit([[MIN_RSRP_5G], [MAX_RSRP_5G]])
+    rsrp_dsrc_scaler = MinMaxScaler(feature_range=(0, 1)).fit([[MIN_RSRP_DSRC], [MAX_RSRP_DSRC]])
 
     scalers = {
         'tx_latitude': gps_scaler,
@@ -132,8 +137,10 @@ def preprocess_lstm_input(df, new, rat, target_cols, time_column, window_size_se
         'latency_ms': latency_scaler,
         'throughput': throughput_scaler,
         'pdr': pdr_scaler,
-        'rsrp_1': rsrp_scaler,
-        'rsrp_2': rsrp_scaler
+        #'sinr': sinr_scaler,
+        #'rsrp': rsrp_5g_scaler,
+        'rsrp_1': rsrp_dsrc_scaler,
+        'rsrp_2': rsrp_dsrc_scaler
     }
 
     print("___ Time to normalize data...")

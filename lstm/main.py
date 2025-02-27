@@ -30,9 +30,6 @@ from data_preprocessing import preprocess_lstm_input
 from model import build_lstm_model, predict_and_retrain, rmse
 
 #%%
-#LOGFILE_PATH = "~/Documents/icccn-lstm/logs_cohda/trim_dsrc.txt"
-#MODEL_PATH = "lstm_model.keras"
-
 TIMESTEPS = 10
 FEATURES = 6
 EPOCHS = 5
@@ -100,7 +97,7 @@ def get_latest_model(rat):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LSTM Model Training and Prediction")
     parser.add_argument('--logfile', type=str, required=True, help="Path to the log file")
-    parser.add_argument('--rat', type=str, required=True, choices=['pc5', 'dsrc'], help="RAT type (pc5 or dsrc)")
+    parser.add_argument('--rat', type=str, required=True, choices=['5g', 'pc5', 'dsrc'], help="RAT type (5g, pc5 or dsrc)")
     parser.add_argument("--model", type=str, help="Path to load the model, or empty for most recent, or 'none' to train a new one")
     args = parser.parse_args()
 
@@ -111,8 +108,10 @@ if __name__ == "__main__":
         FEATURES = 4
     elif RAT == "dsrc":
         FEATURES = 6
+    elif RAT == "5g":
+        FEATURES = 6
     else:
-        raise ValueError("Invalid RAT type. Must be 'pc5' or 'dsrc'.")
+        raise ValueError("Invalid RAT type. Must be '5g', 'pc5' or 'dsrc'.")
     if not args.model:
         # Find most recent model
         MODEL_PATH = os.path.join(MODEL_DIR, get_latest_model(RAT))
@@ -126,6 +125,8 @@ if __name__ == "__main__":
 
 
     # Import data from log file
+    if not os.path.exists(LOGFILE_PATH):
+        raise ValueError(f"Log file not found. {LOGFILE_PATH}")
     df = pd.read_csv(LOGFILE_PATH)
     # Fill NaN values in latitude/longitude (interpolate or forward-fill)
     df["tx_latitude"] = df["tx_latitude"].interpolate().bfill()
@@ -136,10 +137,10 @@ if __name__ == "__main__":
     if LOAD and os.path.exists(MODEL_PATH):
         print("___ Loading existing model: " + MODEL_PATH)
         model = load_model(MODEL_PATH, custom_objects={'rmse': rmse})
-        if model:
+        if model and MODEL_PATH.__contains__(RAT):
             print("___ Model loaded successfully: " + MODEL_PATH)
         else:
-            raise ValueError("Failed to load model.")
+            raise ValueError("!!! Failed to load model. Does the model's RAT type match the log file's RAT type?")
         print("___ Starting data preprocessing.")
         (X_train,y_train,X_new_data,y_new_data,scalers) = preprocess_lstm_input(df, new=False, rat=RAT, target_cols=TARGET_COLS, time_column="tx_timestamp_ms", window_size_sec=PDR_WINDOW, packet_interval_ms=TX_INTERVAL_MS, seq_length=TIMESTEPS, train_ratio=TRAIN_RATIO)
         print("___ Preprocessing complete.")

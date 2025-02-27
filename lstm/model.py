@@ -61,16 +61,17 @@ def predict_and_retrain(model, x_data, y_data, steps, start=0): # TODO prevent o
         print(f"Step {step + 1}: Predicted: {prediction[0,0]:.4f},{prediction[0,1]:.4f}, Actual: {new_y[0,0]:.4f},{new_y[0,1]:.4f}")
 
         # Retrain with new measurement
-        print(f"Retraining model with new data at step {step}...")
+        print(f"___ Retraining model with new data at step {step + 1}...")
         incremental_train(model, new_x, new_y)
 
-    print("Updated model ready for future predictions.")
+    print("___ Updated model ready for future predictions.")
 
 # Grab new data for predicting and re-training
 def generate_new_measurement(x_new_data, y_new_data, index):
-# Ensure index is within bounds
+    # Ensure index is within bounds
     if index >= len(x_new_data):
-        raise IndexError("No more new measurements available.")
+        raise IndexError("!!! No more new measurements available.")
+
     x_new = x_new_data[index]
     y_new = y_new_data[index]
-    return x_new.reshape(1, 10, 6), y_new.reshape(1, *y_new.shape)
+    return x_new.reshape(1, *x_new.shape), y_new.reshape(1, *y_new.shape)
