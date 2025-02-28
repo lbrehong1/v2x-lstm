@@ -27,12 +27,12 @@ warnings.filterwarnings("ignore", category=UserWarning)
 from keras.callbacks import EarlyStopping
 from keras.models import load_model
 from data_preprocessing import preprocess_lstm_input
-from model import build_lstm_model, predict_and_retrain, rmse
+from model import build_lstm_model, build_gru_model, build_rnn_model, predict_and_retrain, rmse
 
 #%%
 TIMESTEPS = 10
 FEATURES = 6
-EPOCHS = 5
+EPOCHS = 20
 SAMPLES = 20000 # number of samples to generate when testing
 TRAIN_RATIO = 0.4 # ratio of samples to use for training
 BATCH_SIZE = 32 # batch size for training, e.g. what is the number of samples to use for each epoch
@@ -49,15 +49,16 @@ MODEL_DIR = "models"
 if not os.path.exists(MODEL_DIR):
     os.makedirs(MODEL_DIR)
 
-def get_latest_model(rat):
+def get_latest_model(model_type, rat):
     """
     Finds the most recent model file based on the RAT type.
+    :param type: Model type ('lstm', 'gru', 'rnn').
     :param rat: RAT type ('pc5' or 'dsrc').
     :return: Path to the most recent model file.
     """
-    model_files = glob.glob(os.path.join(MODEL_DIR, "model_" + rat + "_" + "*.keras"))
+    model_files = glob.glob(os.path.join(MODEL_DIR, model_type + "_" + rat + "_" + "*.keras"))
     model_files_with_time = []
-    regex = re.compile(r"model_" + rat + r"_(\d+).keras")
+    regex = re.compile(rf"{model_type}_{rat}_(\d+)\.keras")
     for file in model_files:
         match = regex.search(os.path.basename(file))
         if match:
@@ -96,14 +97,20 @@ def get_latest_model(rat):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LSTM Model Training and Prediction")
-    parser.add_argument('--logfile', type=str, required=True, help="Path to the log file")
+    parser.add_argument('--data', type=str, required=True, help="Path to the log file")
     parser.add_argument('--rat', type=str, required=True, choices=['5g', 'pc5', 'dsrc'], help="RAT type (5g, pc5 or dsrc)")
-    parser.add_argument("--model", type=str, help="Path to load the model, or empty for most recent, or 'none' to train a new one")
+    parser.add_argument("--load", type=str, help="Path to load the model, or empty for most recent, or 'none' to train a new one")
+    parser.add_argument("--epochs", type=int, help="Number of epochs to train the model")
+    parser.add_argument("--model", type=str, required=True, choices=['lstm', 'gru', 'rnn'], help="Type of model to use (lstm, gru, rnn.)")
     args = parser.parse_args()
 
     # Set constants
-    LOGFILE_PATH = args.logfile
+    LOGFILE_PATH = args.data
     RAT = args.rat
+    MODEL_TYPE = args.model
+    if args.epochs:
+        EPOCHS = int(args.epochs)
+
     if RAT == "pc5":
         FEATURES = 4
     elif RAT == "dsrc":
@@ -112,21 +119,27 @@ if __name__ == "__main__":
         FEATURES = 6
     else:
         raise ValueError("Invalid RAT type. Must be '5g', 'pc5' or 'dsrc'.")
-    if not args.model:
-        # Find most recent model
-        MODEL_PATH = os.path.join(MODEL_DIR, get_latest_model(RAT))
-        LOAD = True
-    elif args.model == "none" :
+
+    if args.load == "none":
         MODEL_PATH = None
         LOAD = False
-    else:
-        MODEL_PATH = os.path.join(MODEL_DIR, os.path.basename(args.model))
+    elif args.load:
+        MODEL_PATH = os.path.join(MODEL_DIR, os.path.basename(args.load))
         LOAD = True
-
+    else:
+        part = get_latest_model(MODEL_TYPE, RAT)
+        if part:
+            MODEL_PATH = part
+            LOAD = True
+        else:
+            MODEL_PATH = None
+            LOAD = False
 
     # Import data from log file
     if not os.path.exists(LOGFILE_PATH):
-        raise ValueError(f"Log file not found. {LOGFILE_PATH}")
+        raise ValueError(f"!!! Log file not found. {LOGFILE_PATH}")
+    elif not LOGFILE_PATH.__contains__(RAT):
+        raise ValueError(f"!!! Log file and argument RAT type do not match. {LOGFILE_PATH}")
     df = pd.read_csv(LOGFILE_PATH)
     # Fill NaN values in latitude/longitude (interpolate or forward-fill)
     df["tx_latitude"] = df["tx_latitude"].interpolate().bfill()
@@ -134,17 +147,25 @@ if __name__ == "__main__":
 
 
     # Load existing model or train new one
+    # Check for consistency of arguments
     if LOAD and os.path.exists(MODEL_PATH):
+        if not MODEL_PATH.__contains__(RAT):
+            raise ValueError("!!! Model and log file RAT types do not match.")
+        if not MODEL_PATH.__contains__(MODEL_TYPE):
+            raise ValueError("!!! Model file and model type do not match.")
+
+        # Load existing model
         print("___ Loading existing model: " + MODEL_PATH)
         model = load_model(MODEL_PATH, custom_objects={'rmse': rmse})
         if model and MODEL_PATH.__contains__(RAT):
             print("___ Model loaded successfully: " + MODEL_PATH)
         else:
-            raise ValueError("!!! Failed to load model. Does the model's RAT type match the log file's RAT type?")
+            raise ValueError("!!! Failed to load model")#. Does the model's RAT type match the argument RAT type?")
         print("___ Starting data preprocessing.")
         (X_train,y_train,X_new_data,y_new_data,scalers) = preprocess_lstm_input(df, new=False, rat=RAT, target_cols=TARGET_COLS, time_column="tx_timestamp_ms", window_size_sec=PDR_WINDOW, packet_interval_ms=TX_INTERVAL_MS, seq_length=TIMESTEPS, train_ratio=TRAIN_RATIO)
         print("___ Preprocessing complete.")
     else:
+        # Train new model
         if not LOAD:
             print("___ No model selected. Building...")
         elif not os.path.exists(MODEL_PATH):
@@ -152,15 +173,23 @@ if __name__ == "__main__":
         print("___ Starting data preprocessing.")
         (X_train,y_train,X_new_data,y_new_data,scalers) = preprocess_lstm_input(df, new=True, rat=RAT, target_cols=TARGET_COLS, time_column="tx_timestamp_ms", window_size_sec=PDR_WINDOW, packet_interval_ms=TX_INTERVAL_MS, seq_length=TIMESTEPS, train_ratio=TRAIN_RATIO)
         print("___ Preprocessing complete.")
-        model = build_lstm_model(TIMESTEPS, FEATURES)
+
+        if MODEL_TYPE == "lstm":
+            model = build_lstm_model(TIMESTEPS, FEATURES)
+        elif MODEL_TYPE == "gru":
+            model = build_gru_model(TIMESTEPS, FEATURES)
+        elif MODEL_TYPE == "rnn":
+            model = build_rnn_model(TIMESTEPS, FEATURES)
+        else:
+            raise ValueError("!!! Invalid model type. Must be 'lstm', 'gru' or 'rnn'.")
         # model.summary() # Print model summary
         early_stopping = EarlyStopping(monitor='loss', patience=5,
                                        restore_best_weights=True)  # Stop training if loss does not improve
         print("___ Initial training...")
         model.fit(X_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, callbacks=[early_stopping], validation_split=VALIDATION_SPLIT, verbose=1)
-        lstm_path = os.path.join(MODEL_DIR, "model_" + RAT + "_" + str(int(time.time())) + ".keras")
-        model.save(lstm_path)
-        print(f"___ Model saved to {lstm_path}")
+        save_path = os.path.join(MODEL_DIR, MODEL_TYPE + "_" + RAT + "_" + str(int(time.time())) + ".keras")
+        model.save(save_path)
+        print(f"___ Model saved to {save_path}")
 
     # Predict and retrain
     position = 0
@@ -177,9 +206,9 @@ if __name__ == "__main__":
                 steps, start = map(int, user_input.split())
                 predict_and_retrain(model, X_new_data, y_new_data, steps+start, start)
                 position = start + steps
-                lstm_path = os.path.join(MODEL_DIR, "model_" + RAT + "_" + str(int(time.time())) + ".keras")
-                model.save(lstm_path)
-                print(f"Model saved to {lstm_path}")
+                save_path = os.path.join(MODEL_DIR, MODEL_TYPE + "_" + RAT + "_" + str(int(time.time())) + ".keras")
+                model.save(save_path)
+                print(f"Model saved to {save_path}")
             except ValueError:
                 print("Invalid input. Please enter two integers separated by a space.")
 #%%

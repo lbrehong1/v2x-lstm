@@ -2,7 +2,7 @@ import numpy as np
 import keras
 import tensorflow.keras.backend as K
 from keras.models import Sequential, Model, load_model
-from keras.layers import Dense, LSTM, Dropout, Input
+from keras.layers import Dense, LSTM, GRU, SimpleRNN, Dropout, Input
 from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping
 from sklearn.metrics import mean_squared_error
@@ -18,6 +18,28 @@ def build_lstm_model(timesteps, features):
     input_shape = (timesteps, features)  # Replace with the number of timesteps, and feature count
     model = Sequential([
         LSTM(64, activation='tanh', return_sequences=False, input_shape=input_shape),
+        Dense(32, activation='relu'),
+        Dense(2)  # Output is a double target value (e.g., throughput and PDR)
+    ])
+    model.compile(Adam(learning_rate=0.001), loss='mse', metrics=[rmse])
+    return model
+
+# Define GRU model
+def build_gru_model(timesteps, features):
+    input_shape = (timesteps, features)  # Replace with the number of timesteps, and feature count
+    model = Sequential([
+        GRU(64, activation='tanh', return_sequences=False, input_shape=input_shape),
+        Dense(32, activation='relu'),
+        Dense(2)  # Output is a double target value (e.g., throughput and PDR)
+    ])
+    model.compile(Adam(learning_rate=0.001), loss='mse', metrics=[rmse])
+    return model
+
+# Define RNN model
+def build_rnn_model(timesteps, features):
+    input_shape = (timesteps, features)  # Replace with the number of timesteps, and feature count
+    model = Sequential([
+        SimpleRNN(64, activation='tanh', return_sequences=False, input_shape=input_shape),
         Dense(32, activation='relu'),
         Dense(2)  # Output is a double target value (e.g., throughput and PDR)
     ])
