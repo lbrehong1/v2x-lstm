@@ -6,6 +6,7 @@ from keras.layers import Dense, LSTM, GRU, SimpleRNN, Dropout, Input
 from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping
 from sklearn.metrics import mean_squared_error
+from tqdm import tqdm
 
 #%%
 ### Define loss function
@@ -97,3 +98,36 @@ def generate_new_measurement(x_new_data, y_new_data, index):
     x_new = x_new_data[index]
     y_new = y_new_data[index]
     return x_new.reshape(1, *x_new.shape), y_new.reshape(1, *y_new.shape)
+
+#%%
+def automatic_train(model, X_new_data, y_new_data, batch_size=32, N=500, validation=0.15, log_file="prediction_log.csv"):
+    x_new, y_new = [], []
+    log_entries = []
+    validation_split = int(validation * len(X_new_data))  # 15% for validation
+
+    X_val, y_val = X_new_data[:validation_split], y_new_data[:validation_split]
+    X_new_data, y_new_data = X_new_data[validation_split:], y_new_data[validation_split:]
+
+    for i in tqdm(range(len(X_new_data)), desc="Processing new data", unit="seq"):
+        x_new.append(X_new_data[i])
+        y_new.append(y_new_data[i])
+
+
+        if len(x_new) >= N:  # Retrain every 500 new points
+            # Log predictions before training
+            for j in range(len(x_new)):
+                lat, lon = x_new[j][-1][:2]  # Extract last lat, lon in sequence
+                pred = model.predict(np.expand_dims(x_new[j], axis=0))[0]
+                actual = y_new[j]
+                error = np.sqrt(np.mean((pred - actual) ** 2))  # RMSE
+                log_entries.append(f"{lat},{lon},{pred[0]},{actual[0]},{error}")
+
+            # Train the model
+            generator = DataStreamGenerator(x_new, y_new, batch_size)
+            model.fit(generator, epochs=1, verbose=1, validation_data=(np.array(X_val), np.array(y_val)))
+
+            x_new, y_new = [], []  # Clear batch
+
+        with open(log_file, "a") as f:
+            for entry in log_entries:
+                f.write(entry + "\n")

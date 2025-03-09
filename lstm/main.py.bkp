@@ -26,8 +26,8 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 from keras.callbacks import EarlyStopping
 from keras.models import load_model
-from data_preprocessing import preprocess_lstm_input, compute_pdr_rolling
-from model import build_lstm_model, build_gru_model, build_rnn_model, predict_and_retrain, automatic_train, rmse
+from data_preprocessing import preprocess_lstm_input
+from model import build_lstm_model, build_gru_model, build_rnn_model, predict_and_retrain, rmse
 
 #%%
 TIMESTEPS = 10
@@ -38,7 +38,8 @@ TRAIN_RATIO = 0.4 # ratio of samples to use for training
 BATCH_SIZE = 32 # batch size for training, e.g. what is the number of samples to use for each epoch
 VALIDATION_SPLIT = 0.15
 TX_INTERVAL_MS = 20 # in ms, 50 packets per second
-PDR_WINDOW = 10 # in seconds
+#TX_INTERVAL_MS = 100 # in ms, 10 packets per second
+PDR_WINDOW = 1 # in seconds
 TARGET_COLS = ['latency_ms', 'pdr']
 MODEL_DIR = "models"
 
@@ -47,11 +48,6 @@ MODEL_DIR = "models"
 # Ensure the models directory exists
 if not os.path.exists(MODEL_DIR):
     os.makedirs(MODEL_DIR)
-
-def find_files_with_string(directory, search_string):
-    all_files = os.listdir(directory)  # Get all files and directories
-    matching_files = [f for f in all_files if search_string in f]  # Filter files
-    return matching_files
 
 def get_latest_model(model_type, rat):
     """
@@ -101,8 +97,7 @@ def get_latest_model(model_type, rat):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LSTM Model Training and Prediction")
-    parser.add_argument('--data', type=str, required=True, help="Path to the folder for training data log files")
-    parser.add_argument('--new_data', type=str, required=True, help="Path to the folder for the new data log file")
+    parser.add_argument('--data', type=str, required=True, help="Path to the log file")
     parser.add_argument('--rat', type=str, required=True, choices=['5g', 'pc5', 'dsrc'], help="RAT type (5g, pc5 or dsrc)")
     parser.add_argument("--load", type=str, help="Path to load the model, or empty for most recent, or 'none' to train a new one")
     parser.add_argument("--epochs", type=int, help="Number of epochs to train the model")
@@ -110,28 +105,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Set constants
-    PATH = args.data
-    PATH_NEW = args.new_data
+    LOGFILE_PATH = args.data
     RAT = args.rat
     MODEL_TYPE = args.model
     if args.epochs:
         EPOCHS = int(args.epochs)
-    if not os.path.exists(PATH):
-        raise ValueError(f"!!! Log file not found. {PATH}")
 
     if RAT == "pc5":
         FEATURES = 4
-        files = find_files_with_string(PATH, "trim_pc5")
-        new_file = find_files_with_string(PATH_NEW, "trim_pc5")[0]
     elif RAT == "dsrc":
         FEATURES = 6
-        files = find_files_with_string(PATH, "trim_dsrc")
-        new_file = find_files_with_string(PATH_NEW, "trim_dsrc")[0]
     elif RAT == "5g":
         FEATURES = 6
-        TX_INTERVAL_MS = 50
-        files = find_files_with_string(PATH, "trim_5g")
-        new_file = find_files_with_string(PATH_NEW, "trim_5g")[0]
     else:
         raise ValueError("Invalid RAT type. Must be '5g', 'pc5' or 'dsrc'.")
 
@@ -151,30 +136,14 @@ if __name__ == "__main__":
             LOAD = False
 
     # Import data from log file
-    dfs = []
-    for file in files:
-        print(f"___ Processing file: {file}")
-        df_part = pd.read_csv(os.path.join(PATH, file))
-        # Fill NaN values in latitude/longitude (interpolate or forward-fill)
-        df_part["tx_latitude"] = df_part["tx_latitude"].interpolate().bfill()
-        df_part["tx_longitude"] = df_part["tx_longitude"].interpolate().bfill()
-        # Compute PDR and add it to dataframe
-        print("___ Time to compute PDR...")
-        df_part = compute_pdr_rolling(df_part, "tx_timestamp_ms", PDR_WINDOW, TX_INTERVAL_MS)
-        dfs.append(df_part)
-
-    # Add to main dataframe
-    df = pd.concat(dfs, ignore_index=True)
-
-    print(f"___ Processing file: {new_file}")
-    df_new = pd.read_csv(os.path.join(PATH_NEW, new_file))
+    if not os.path.exists(LOGFILE_PATH):
+        raise ValueError(f"!!! Log file not found. {LOGFILE_PATH}")
+    elif not LOGFILE_PATH.__contains__(RAT):
+        raise ValueError(f"!!! Log file and argument RAT type do not match. {LOGFILE_PATH}")
+    df = pd.read_csv(LOGFILE_PATH)
     # Fill NaN values in latitude/longitude (interpolate or forward-fill)
-    df_new["tx_latitude"] = df_new["tx_latitude"].interpolate().bfill()
-    df_new["tx_longitude"] = df_new["tx_longitude"].interpolate().bfill()
-    # Compute PDR and add it to dataframe
-    print("___ Time to compute PDR...")
-    compute_pdr_rolling(df_new, "tx_timestamp_ms", PDR_WINDOW, TX_INTERVAL_MS)
-
+    df["tx_latitude"] = df["tx_latitude"].interpolate().bfill()
+    df["tx_longitude"] = df["tx_longitude"].interpolate().bfill()
 
 
     # Load existing model or train new one
@@ -193,7 +162,7 @@ if __name__ == "__main__":
         else:
             raise ValueError("!!! Failed to load model")#. Does the model's RAT type match the argument RAT type?")
         print("___ Starting data preprocessing.")
-        (X_train,y_train,X_new_data,y_new_data,scalers) = preprocess_lstm_input(df, new=False, rat=RAT, target_cols=TARGET_COLS, time_column="tx_timestamp_ms", window_size_sec=PDR_WINDOW, packet_interval_ms=TX_INTERVAL_MS, seq_length=TIMESTEPS)
+        (X_train,y_train,X_new_data,y_new_data,scalers) = preprocess_lstm_input(df, new=False, rat=RAT, target_cols=TARGET_COLS, time_column="tx_timestamp_ms", window_size_sec=PDR_WINDOW, packet_interval_ms=TX_INTERVAL_MS, seq_length=TIMESTEPS, train_ratio=TRAIN_RATIO)
         print("___ Preprocessing complete.")
     else:
         # Train new model
@@ -202,62 +171,44 @@ if __name__ == "__main__":
         elif not os.path.exists(MODEL_PATH):
             print("___ No model found. Building...")
         print("___ Starting data preprocessing.")
-        print("______ Training set.")
-        (X_train,y_train,scalers) = preprocess_lstm_input(df, new=True, rat=RAT, target_cols=TARGET_COLS, seq_length=TIMESTEPS)
-        print("___ Preprocessing complete.")
-        print("______ New set.")
-        (X_new_data,y_new_data,scalers) = preprocess_lstm_input(df_new, new=True, rat=RAT, target_cols=TARGET_COLS, seq_length=TIMESTEPS)
+        (X_train,y_train,X_new_data,y_new_data,scalers) = preprocess_lstm_input(df, new=True, rat=RAT, target_cols=TARGET_COLS, time_column="tx_timestamp_ms", window_size_sec=PDR_WINDOW, packet_interval_ms=TX_INTERVAL_MS, seq_length=TIMESTEPS, train_ratio=TRAIN_RATIO)
         print("___ Preprocessing complete.")
 
-
-        model_lstm = build_lstm_model(TIMESTEPS, FEATURES)
-        model_gru = build_gru_model(TIMESTEPS, FEATURES)
-        model_rnn = build_rnn_model(TIMESTEPS, FEATURES)
+        if MODEL_TYPE == "lstm":
+            model = build_lstm_model(TIMESTEPS, FEATURES)
+        elif MODEL_TYPE == "gru":
+            model = build_gru_model(TIMESTEPS, FEATURES)
+        elif MODEL_TYPE == "rnn":
+            model = build_rnn_model(TIMESTEPS, FEATURES)
+        else:
+            raise ValueError("!!! Invalid model type. Must be 'lstm', 'gru' or 'rnn'.")
         # model.summary() # Print model summary
         early_stopping = EarlyStopping(monitor='loss', patience=5,
                                        restore_best_weights=True)  # Stop training if loss does not improve
         print("___ Initial training...")
-        print("______ LSTM")
-        model_lstm.fit(X_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, callbacks=[early_stopping], validation_split=VALIDATION_SPLIT, verbose=1)
-        save_path = os.path.join(MODEL_DIR, "lstm_" + RAT + "_" + str(int(time.time())) + ".keras")
-        model_lstm.save(save_path)
-        print(f"______ Model saved to {save_path}")
-        print("______ GRU")
-        model_gru.fit(X_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, callbacks=[early_stopping], validation_split=VALIDATION_SPLIT, verbose=1)
-        save_path = os.path.join(MODEL_DIR, "gru_" + RAT + "_" + str(int(time.time())) + ".keras")
-        model_gru.save(save_path)
-        print(f"______ Model saved to {save_path}")
-        print("______ RNN")
-        model_rnn.fit(X_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, callbacks=[early_stopping], validation_split=VALIDATION_SPLIT, verbose=1)
-        save_path = os.path.join(MODEL_DIR, "rnn_" + RAT + "_" + str(int(time.time())) + ".keras")
-        model_rnn.save(save_path)
-        print(f"______ Model saved to {save_path}")
+        model.fit(X_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, callbacks=[early_stopping], validation_split=VALIDATION_SPLIT, verbose=1)
+        save_path = os.path.join(MODEL_DIR, MODEL_TYPE + "_" + RAT + "_" + str(int(time.time())) + ".keras")
+        model.save(save_path)
+        print(f"___ Model saved to {save_path}")
 
-
-
-#        if MODEL_TYPE == "lstm":
-#            model = build_lstm_model(TIMESTEPS, FEATURES)
-#        elif MODEL_TYPE == "gru":
-#            model = build_gru_model(TIMESTEPS, FEATURES)
-#        elif MODEL_TYPE == "rnn":
-#            model = build_rnn_model(TIMESTEPS, FEATURES)
-#        else:
-#            raise ValueError("!!! Invalid model type. Must be 'lstm', 'gru' or 'rnn'.")
-#        # model.summary() # Print model summary
-#        early_stopping = EarlyStopping(monitor='loss', patience=5,
-#                                       restore_best_weights=True)  # Stop training if loss does not improve
-#        print("___ Initial training...")
-#        model.fit(X_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, callbacks=[early_stopping], validation_split=VALIDATION_SPLIT, verbose=1)
-#        save_path = os.path.join(MODEL_DIR, MODEL_TYPE + "_" + RAT + "_" + str(int(time.time())) + ".keras")
-#        model.save(save_path)
-#        print(f"___ Model saved to {save_path}")
-
-
-    # Automatic retraining
-    print("____________________________________________________")
-    print("Automatic retraining.")
-    automatic_train(model_lstm, X_new_data, y_new_data, 32, 500, 0.15, "prediction_log_" + "lstm" + "_" + RAT +  ".csv")
-    automatic_train(model_gru, X_new_data, y_new_data, 32, 500, 0.15, "prediction_log_" + "gru" + "_" + RAT +  ".csv")
-    automatic_train(model_rnn, X_new_data, y_new_data, 32, 500, 0.15, "prediction_log_" + "rnn" + "_" + RAT +  ".csv")
-
+    # Predict and retrain
+    position = 0
+    while True:
+        print("____________________________________________________")
+        user_input = input("Prediction and retraining. Enter 'steps' to predict and 'starting' point in the new values dataset, separated by a space (or 'exit' to quit, or leave empty for one step): ")
+        if user_input.lower() == 'exit':
+            break
+        elif not user_input:
+            predict_and_retrain(model, X_new_data, y_new_data, position+1, position)
+            position += 1
+        else:
+            try:
+                steps, start = map(int, user_input.split())
+                predict_and_retrain(model, X_new_data, y_new_data, steps+start, start)
+                position = start + steps
+                save_path = os.path.join(MODEL_DIR, MODEL_TYPE + "_" + RAT + "_" + str(int(time.time())) + ".keras")
+                model.save(save_path)
+                print(f"Model saved to {save_path}")
+            except ValueError:
+                print("Invalid input. Please enter two integers separated by a space.")
 #%%

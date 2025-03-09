@@ -88,7 +88,7 @@ def generate_lstm_sequences(data, feature_cols, target_cols, seq_length, batch_s
 
 
 #%%
-def preprocess_lstm_input(df, new, rat, target_cols, seq_length):
+def preprocess_lstm_input(df, new, rat, target_cols, seq_length, train_ratio):
     """
     Prepares LSTM input by computing PDR, normalizing features, and creating time series sequences.
 
@@ -98,6 +98,7 @@ def preprocess_lstm_input(df, new, rat, target_cols, seq_length):
     :param rat: RAT for this LSTM, used to determine feature column names.
     :param target_cols: List of target column names (e.g., ['throughput', 'PDR']).
     :param seq_length: Number of past timesteps to use as input for LSTM.
+    :param train_ratio: Ratio of training data to total data.
     """
     # Initialize variables
     gps_flag = False
@@ -133,7 +134,7 @@ def preprocess_lstm_input(df, new, rat, target_cols, seq_length):
         'latency_ms': latency_scaler,
         'throughput': throughput_scaler,
         'pdr': pdr_scaler,
-        'sinr': sinr_5g_scaler,
+        'sinr': sinr_scaler,
         'rsrp': rsrp_5g_scaler,
         'rsrp_1': rsrp_dsrc_scaler,
         'rsrp_2': rsrp_dsrc_scaler
@@ -153,18 +154,33 @@ def preprocess_lstm_input(df, new, rat, target_cols, seq_length):
         else:
             df[col] = scalers[col].transform(df[[col]])  # Apply fitted scaler
 
+    # Split into training/validation & new data sets
+    print("___ Splitting data between training and future input...")
+    split_idx = int(len(df) * train_ratio)
+    train_val_data = df.iloc[:split_idx].copy()
+    #end_idx = split_idx * 2 # THIS WAS FOR TESTING PURPOSES, keeping the full dataset explodes RAM usage
+    new_data = df.iloc[split_idx:].copy() # COMMENT THIS IF TESTING, keeping the full dataset explodes RAM usage
+    #new_data = df.iloc[split_idx:end_idx].copy() # THIS WAS FOR TESTING PURPOSES, keeping the full dataset explodes RAM usage
 
     # Convert to sequences for LSTM
     print("___ Time to convert into 3D data...")
     x_sequences_train, y_sequences_train = [], []
+    x_sequences_new, y_sequences_new = [], []
     if new: # This is a new model, we need to concat 3D training data
-        print(f"___ Training data... length {len(df) - seq_length}")
-        for x_batch, y_batch in generate_lstm_sequences(df, feature_cols, target_cols, seq_length):
+        print(f"___ Training data... length {len(train_val_data) - seq_length}")
+        for x_batch, y_batch in generate_lstm_sequences(train_val_data, feature_cols, target_cols, seq_length):
             x_sequences_train.append(x_batch)
             y_sequences_train.append(y_batch)
         x_sequences_train = np.concatenate(x_sequences_train, axis=0)
         y_sequences_train = np.concatenate(y_sequences_train, axis=0)
 
+    # Now we concat 3D new data
+    print(f"___ New data... length {len(new_data) - seq_length}")
+    for x_batch, y_batch in generate_lstm_sequences(new_data, feature_cols, target_cols, seq_length):
+        x_sequences_new.append(x_batch)
+        y_sequences_new.append(y_batch)
+    x_sequences_new = np.concatenate(x_sequences_new, axis=0)
+    y_sequences_new = np.concatenate(y_sequences_new, axis=0)
 
     print("___ Time to convert into numpy arrays...")
-    return np.array(x_sequences_train), np.array(y_sequences_train), scalers
+    return np.array(x_sequences_train), np.array(y_sequences_train), np.array(x_sequences_new), np.array(y_sequences_new), scalers
