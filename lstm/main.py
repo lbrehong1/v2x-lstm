@@ -234,10 +234,10 @@ if __name__ == "__main__":
         (X_new_data,y_new_data,scalers) = preprocess_lstm_input(df_new, new=True, rat=RAT, target_cols=TARGET_COLS, seq_length=TIMESTEPS)
         print("___ Preprocessing complete.")
         # Save preprocessed data
-        np.savez_compressed(str(int(time.time())) + "_lstm_data.npz",
+        np.savez_compressed(RAT + "_lstm_data.npz",
                             x_train=X_train, y_train=y_train,
                             x_new_data=X_new_data, y_new_data=y_new_data)
-        print("Preprocessed data saved! " + str(int(time.time())) + "_lstm_data.npz")
+        print("Preprocessed data saved! " + RAT + "_lstm_data.npz")
 
 
     # Load existing model or train new one
