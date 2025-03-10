@@ -1,5 +1,6 @@
 import numpy as np
 import keras
+import pandas as pd
 import tensorflow.keras.backend as K
 from keras.models import Sequential, Model, load_model
 from keras.layers import Dense, LSTM, GRU, SimpleRNN, Dropout, Input
@@ -102,6 +103,9 @@ def generate_new_measurement(x_new_data, y_new_data, index):
 
 #%%
 def automatic_train(model, X_new_data, y_new_data, batch_size=32, N=500, validation=0.15, log_file="prediction_log.csv"):
+    with open(log_file, "w") as f:
+        f.write("latitude,longitude,pred_latency,actual_latency,rmse_latency,pred_pdr,actual_pdr,rmse_pdr" + "\n")
+
     x_new, y_new = [], []
     log_entries = []
     validation_split = int(validation * len(X_new_data))  # 15% for validation
@@ -117,12 +121,17 @@ def automatic_train(model, X_new_data, y_new_data, batch_size=32, N=500, validat
         if len(x_new) >= N:  # Retrain every 500 new points
             # Log predictions before training
             for j in range(len(x_new)):
-                #print(x_new[j][-1])
                 lat, lon = x_new[j][-1][:2]  # Extract last lat, lon in sequence
                 pred = model.predict(np.expand_dims(x_new[j], axis=0))[0]
                 actual = y_new[j]
-                error = np.sqrt(np.mean((pred - actual) ** 2))  # RMSE
-                log_entries.append(f"{lat},{lon},{pred[0]},{actual[0]},{error}")
+
+                pred_latency, pred_pdr = pred[0], pred[1]
+                actual_latency, actual_pdr = actual[0], actual[1]
+
+                error_latency = np.sqrt((pred_latency - actual_latency) ** 2)  # RMSE for latency
+                error_pdr = np.sqrt((pred_pdr - actual_pdr) ** 2)  # RMSE for PDR
+
+                log_entries.append(f"{lat},{lon},{pred_latency},{actual_latency},{error_latency},{pred_pdr},{actual_pdr},{error_pdr}")
 
             # Train the model
             generator = DataStreamGenerator(x_new, y_new, batch_size)
@@ -133,6 +142,7 @@ def automatic_train(model, X_new_data, y_new_data, batch_size=32, N=500, validat
         with open(log_file, "a") as f:
             for entry in log_entries:
                 f.write(entry + "\n")
+        log_entries = []
 
 
 #%%

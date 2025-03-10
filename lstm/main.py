@@ -190,7 +190,7 @@ if __name__ == "__main__":
             LOAD = False
 
     # Import data from log file
-    if PATH:
+    if PATH and not DATA_NPZ:
         dfs = []
         for file in files:
             print(f"___ Processing file: {file}")

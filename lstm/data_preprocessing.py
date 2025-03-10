@@ -170,3 +170,17 @@ def preprocess_lstm_input(df, new, rat, target_cols, seq_length):
 
     print("___ Time to convert into numpy arrays...")
     return np.array(x_sequences_train), np.array(y_sequences_train), scalers
+
+
+#%%
+
+def inverse_transform(scalers, csv):
+    log_df = pd.read_csv(csv, header=None, names=["latitude","longitude","pred_latency","actual_latency","rmse_latency","pred_pdr","actual_pdr","rmse_pdr"])
+
+    log_df[['latitude', 'longitude']] = scalers['tx_latitude'].inverse_transform(log_df[['latitude', 'longitude']])
+    log_df['pred_latency'] = scalers['latency_ms'].inverse_transform(log_df[['pred_latency']])
+    log_df['actual_latency'] = scalers['latency_ms'].inverse_transform(log_df[['actual_latency']])
+    log_df['pred_pdr'] = scalers['pdr'].inverse_transform(log_df['pred_pdr'])
+    log_df['actual_pdr'] = scalers['pdr'].inverse_transform(log_df['actual_pdr'])
+
+    log_df.to_csv(csv + "_scaled", index=False)
