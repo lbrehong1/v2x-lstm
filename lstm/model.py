@@ -7,6 +7,7 @@ from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping
 from sklearn.metrics import mean_squared_error
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 #%%
 ### Define loss function
@@ -116,6 +117,7 @@ def automatic_train(model, X_new_data, y_new_data, batch_size=32, N=500, validat
         if len(x_new) >= N:  # Retrain every 500 new points
             # Log predictions before training
             for j in range(len(x_new)):
+                #print(x_new[j][-1])
                 lat, lon = x_new[j][-1][:2]  # Extract last lat, lon in sequence
                 pred = model.predict(np.expand_dims(x_new[j], axis=0))[0]
                 actual = y_new[j]
@@ -124,10 +126,22 @@ def automatic_train(model, X_new_data, y_new_data, batch_size=32, N=500, validat
 
             # Train the model
             generator = DataStreamGenerator(x_new, y_new, batch_size)
-            model.fit(generator, epochs=1, verbose=1, validation_data=(np.array(X_val), np.array(y_val)))
+            model.fit(generator, epochs=1, verbose=1, callbacks=[EarlyStopping(patience=2)], validation_data=(np.array(X_val), np.array(y_val)))
 
             x_new, y_new = [], []  # Clear batch
 
         with open(log_file, "a") as f:
             for entry in log_entries:
                 f.write(entry + "\n")
+
+
+#%%
+def plot_losses(history):
+    # Plot Training & Validation Loss
+    plt.plot(history.history['loss'], label='Training Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.title('Model Training vs Validation Loss')
+    plt.show()

@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 MIN_LAT, MAX_LAT = 43.554669, 43.568290
 MIN_LON, MAX_LON = 1.463952, 1.472176
-MIN_LATENCY, MAX_LATENCY = 4,1000 # in ms
+MIN_LATENCY, MAX_LATENCY = 4,50 # in ms
 MIN_THROUGHPUT, MAX_THROUGHPUT = 0, 100 # in Mbps
 MIN_PDR, MAX_PDR = 0, 1
 MIN_SINR_5G, MAX_SINR_5G = 200, 375
@@ -112,11 +112,13 @@ def preprocess_lstm_input(df, new, rat, target_cols, seq_length):
 
 
     # Compute PDR and add it to dataframe
-    print("___ Time to compute PDR...")
+    #print("___ Time to compute PDR...")
     #compute_pdr_rolling(df, time_column, window_size_sec, packet_interval_ms)
 
-# Select relevant features and targets (e.g., get rid of seqnum and timestamp column)
+    # Select relevant features and targets (e.g., get rid of seqnum and timestamp column)
     df = df[feature_cols].dropna()  # Ensure no NaNs
+    # Filter out rows where 'tx_latitude' and 'tx_longitude' are equal to MIN_LAT and MIN_LON
+    df = df[~((df['tx_latitude'] == MIN_LAT) & (df['tx_longitude'] == MIN_LON))]
 
     # Normalize features and target values
     gps_scaler = MinMaxScaler(feature_range=(0, 1)).fit([[MIN_LAT, MIN_LON], [MAX_LAT, MAX_LON]])

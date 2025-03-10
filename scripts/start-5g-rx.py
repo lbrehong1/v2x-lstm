@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-LOGFILE_PATH = "logs_5g.txt"
+#LOGFILE_PATH = "logs_5g.txt"
 
 @app.route('/', methods=['POST'])
 def handle_request():
@@ -16,7 +16,7 @@ def handle_request():
         lat = data["lat"]
         lon = data["lon"]
 
-        if query == "test_post" and isinstance(lat, float) and isinstance(lon, float):
+        if query == "test" and isinstance(lat, float) and isinstance(lon, float):
             response_data = {
                 "query": "answer",
                 "lat": lat,
@@ -46,7 +46,7 @@ def handle_request():
             timestamp = data["timestamp"]
             sinr = data["sinr"]
             rsrp = data["rsrp"]
-            latency = float(format(time.time(),".3f")) - float(timestamp)
+            latency = float(format(time.time(),".6f")) - float(timestamp)
             print(f"Logged data: seqnum={seqnum}, timestamp={timestamp}, lat={lat}, lon={lon}, latency={latency}, sinr={sinr}, rsrp={rsrp}")
 
             # Write log data to file
@@ -74,8 +74,9 @@ def handle_request():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="HTTP message receiver")
     parser.add_argument('--logfile', type=str, required=True, help="Path to the log file")
-    parser.parse_args()
+    args = parser.parse_args()
 
+    LOGFILE_PATH = args.logfile
     if not os.path.exists(LOGFILE_PATH):
         with open(LOGFILE_PATH, "w") as logfile:
             logfile.write("tx_seq_num,tx_timestamp_ms,tx_latitude,tx_longitude,sinr,rsrp,latency_ms\n")

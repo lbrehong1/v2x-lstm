@@ -4,10 +4,11 @@ import argparse
 import time
 import serial
 import re
+import ntplib
 import threading
 
 URL = "lstm.univ-tlse3.fr"
-PORT = 8026
+PORT = 8080
 LAT = 43.554669
 LON = 1.463952
 COMMAND = 'AT#MONI'
@@ -16,9 +17,14 @@ NAN = "NaN"
 
 #%%
 
+def get_ntp_time():
+    client = ntplib.NTPClient()
+    response = client.request('pool.ntp.org', version=3)
+    return response.tx_time  # Get the NTP timestamp
+
 def send_at_command(command):
     ser.write((command + '\r\n').encode())
-    time.sleep(.01)
+    time.sleep(.001)
     response = ser.read_all().decode('utf-8')
     print("AT response:", response)
     return response
@@ -53,16 +59,31 @@ def nmea_to_decimal(coord, direction):
     return None
 
 def isolate_rsrp_sinr(response):
-    # Regex pattern to extract NR_RSRP and NR_SINR
-    match = re.search(r"NR_RSRP:(-?\d+)\s+NR_SINR:(-?\d+)", response)
-    if match:
-        nr_rsrp = int(match.group(1))
-        nr_sinr = int(match.group(2))
-        print(f"NR_RSRP: {nr_rsrp}, NR_SINR: {nr_sinr}")
+    # Extract the line that starts with "#MONI"
+    lines = response.splitlines()
+    print("Extracted Lines:", lines)
+    # Extract the line that starts with "#MONI"
+    moni_line = next((line for line in lines if line.strip().startswith("#MONI")), None)
+
+    # Debug: Show exactly what's in the MONI line
+    print("Extracted MONI Line:", repr(moni_line))
+
+    # More flexible regex to handle any whitespace or hidden characters
+    if moni_line:
+        match = re.search(r"NR_RSRP:\s*(-?\d+).*?NR_SINR:\s*(-?\d+)", moni_line)
+
+        if match:
+            nr_rsrp = int(match.group(1))
+            nr_sinr = int(match.group(2))
+            print(f"NR_RSRP: {nr_rsrp}, NR_SINR: {nr_sinr}")
+        else:
+            nr_sinr = NAN
+            nr_rsrp = NAN
+            print("NR_RSRP or NR_SINR not found in extracted MONI line.")
     else:
-        print("NR_RSRP or NR_SINR not found")
-        nr_rsrp = NAN
         nr_sinr = NAN
+        nr_rsrp = NAN
+        print("No line starting with #MONI found.")
     return str(nr_rsrp), str(nr_sinr)
 
 def generate_query(query, lat, lon):
@@ -84,7 +105,7 @@ def generate_message(query, num, timestamp, lat, lon, sinr, rsrp):
     }
 
 def send_post(url, port, query_data):
-    full_url = f"https://{url}:{port}/"
+    full_url = f"https://{url}/" # Redirect is done server-side
     headers = {'Content-Type': 'application/json'}
     response = requests.post(full_url, data=json.dumps(query_data), headers=headers)
     return response.json()
@@ -104,15 +125,15 @@ if __name__ == "__main__":
 
     TYPE = args.type
     TX_INTERVAL = args.tx_interval
-    COM = args.com_port
+    COM_PORT = args.com_port
 
     ser = serial.Serial(
-        port=COM_PORT,
-        baudrate=115200,
-        parity=serial.PARITY_NONE,
-        stopbits=serial.STOPBITS_ONE,
-        bytesize=serial.EIGHTBITS,
-        timeout=1
+         port=COM_PORT,
+         baudrate=115200,
+         parity=serial.PARITY_NONE,
+         stopbits=serial.STOPBITS_ONE,
+         bytesize=serial.EIGHTBITS,
+         timeout=1
     )
 
     if TYPE == "test_post":
@@ -133,7 +154,7 @@ if __name__ == "__main__":
         lat, lon = isolate_lat_lon(gps_to_parse)
 
         query = "test_log"
-        timestamp = format(time.time(), '.3f')
+        timestamp = format(time.time(), '.6f')
         gps_lat = lat
         gps_lon = lon
         sinr = nr_sinr
@@ -179,7 +200,9 @@ if __name__ == "__main__":
 
                 # Populate and send data
                 query = "log"
-                timestamp = format(time.time(), '.3f')
+                # Get the NTP time and format it with milliseconds
+                ntp_timestamp = get_ntp_time()
+                timestamp = f"{ntp_timestamp:.6f}"
                 gps_lat = lat
                 gps_lon = lon
                 sinr = nr_sinr
