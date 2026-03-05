@@ -644,7 +644,7 @@ def run_multi_vehicle_loop(
     correction_exponent: float = PDR_CORRECTION_EXPONENT,
     num_vehicles: int = 20,
     sim_tx_interval_ms: Optional[int] = None,
-    enable_contention: bool = True,
+    enable_contention: bool = False,
     enable_dtmc: bool = True,
 ):
     """Run multi-vehicle platoon simulation with optional contention effects.
@@ -1126,47 +1126,6 @@ def run_multi_vehicle_loop(
     for k, v in dtmc_agg.items():
         print(f"  {k}: {v}")
     print("=" * 64)
-
-    # Automatically run variant passes for comparison
-    if enable_contention:
-        run_multi_vehicle_loop(
-            input_csv=input_csv,
-            model_type=model_type,
-            seed=seed,
-            retrain_interval=retrain_interval,
-            base_packet_size=base_packet_size,
-            correction_exponent=correction_exponent,
-            num_vehicles=num_vehicles,
-            sim_tx_interval_ms=sim_tx_interval_ms,
-            enable_contention=False,
-            enable_dtmc=enable_dtmc,
-        )
-    if enable_dtmc:
-        run_multi_vehicle_loop(
-            input_csv=input_csv,
-            model_type=model_type,
-            seed=seed,
-            retrain_interval=retrain_interval,
-            base_packet_size=base_packet_size,
-            correction_exponent=correction_exponent,
-            num_vehicles=num_vehicles,
-            sim_tx_interval_ms=sim_tx_interval_ms,
-            enable_contention=enable_contention,
-            enable_dtmc=False,
-        )
-    if enable_contention and not enable_dtmc:
-        run_multi_vehicle_loop(
-            input_csv=input_csv,
-            model_type=model_type,
-            seed=seed,
-            retrain_interval=retrain_interval,
-            base_packet_size=base_packet_size,
-            correction_exponent=correction_exponent,
-            num_vehicles=num_vehicles,
-            sim_tx_interval_ms=sim_tx_interval_ms,
-            enable_contention=False,
-            enable_dtmc=False,
-        )
 
     return summary
 
